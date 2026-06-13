@@ -58,9 +58,14 @@ proc radio::announce {} {
     set link  "\00312\037${site}\017"
     set line  "$tag $g $s — $b  ▶ tune in: $link"
 
+    set wtag  [radio::c "0,4" " WUNDERBAR "]
+    set wsite "\00312\037www.wunderbar.lv\017"
+    set wline "$wtag [radio::c "11" "VISIT OUR MAIN WEBSITE:"] $wsite"
+
     foreach chan [channels] {
         if {[onchan $::botnick $chan]} {
             putserv "PRIVMSG $chan :$line"
+            putserv "PRIVMSG $chan :$wline"
         }
     }
 }
