@@ -138,4 +138,76 @@ proc oppact::sweep {min hour day month year} {
     }
 }
 
-putlog "oppact.tcl loaded — pact: $oppact::members"
+# =========================================================================
+# BOSS UNBAN = LAW.  When boss (or any oper acting as boss) lifts a ban,
+# every bot records that mask as "boss-cleared" for a window. During that
+# window NO bot may re-ban the mask — if one tries, we instantly lift it
+# again. This makes a boss unban final across the whole pact.
+# =========================================================================
+namespace eval oppact { variable bossunban ; array set bossunban {} }
+
+# how long (seconds) a boss unban stays "law" and blocks re-bans
+proc oppact::unban_ttl {} { return 1800 }
+
+# record that boss cleared this mask on this channel
+proc oppact::lock_unban {chan mask} {
+    variable bossunban
+    set bossunban([string tolower $chan]\x00[string tolower $mask]) \
+        [expr {[clock seconds] + [oppact::unban_ttl]}]
+}
+
+# is this exact mask currently boss-cleared on this channel?
+proc oppact::unban_locked {chan mask} {
+    variable bossunban
+    set k [string tolower $chan]\x00[string tolower $mask]
+    if {![info exists bossunban($k)]} { return 0 }
+    if {[clock seconds] > $bossunban($k)} { unset bossunban($k) ; return 0 }
+    return 1
+}
+
+# When ANY ban is REMOVED (-b) by boss -> it becomes law. Lock the mask.
+bind mode - "*-b*" oppact::on_unban
+proc oppact::on_unban {nick uhost hand chan mode target} {
+    if {[oppact::is_boss $nick]} {
+        oppact::lock_unban $chan $target
+        putlog "oppact: boss unbanned $target on $chan — LAW. No bot may re-ban for [oppact::unban_ttl]s."
+    }
+}
+
+# When ANY ban is ADDED (+b) -> if boss had cleared this mask, lift it again
+# immediately. boss's word is final.
+bind mode - "*+b*" oppact::on_ban_check
+proc oppact::on_ban_check {nick uhost hand chan mode target} {
+    # never undo boss's OWN ban
+    if {[oppact::is_boss $nick]} { return }
+    if {[oppact::unban_locked $chan $target]} {
+        if {[isop $::botnick $chan]} {
+            putquick "MODE $chan -b $target"
+            putlog "oppact: $nick re-banned $target on $chan but boss had unbanned it — LIFTED (boss law)."
+        }
+    }
+}
+
+# Periodic sweep: enforce boss unban law — lift any banned mask boss cleared.
+bind time - "* * * * *" oppact::sweep_unbanlaw
+proc oppact::sweep_unbanlaw {min hour day month year} {
+    variable bossunban
+    set now [clock seconds]
+    foreach chan [channels] {
+        if {![isop $::botnick $chan]} { continue }
+        foreach ban [chanbans $chan] {
+            set mask [lindex $ban 0]
+            if {[oppact::unban_locked $chan $mask]} {
+                putquick "MODE $chan -b $mask"
+                catch {killchanban $chan $mask}
+                putlog "oppact: sweep lifted re-ban $mask on $chan (boss law)."
+            }
+        }
+    }
+    # prune expired locks
+    foreach k [array names bossunban] {
+        if {$now > $bossunban($k)} { unset bossunban($k) }
+    }
+}
+
+putlog "oppact.tcl loaded — pact: $oppact::members (boss supremacy + boss-unban-law active)"
