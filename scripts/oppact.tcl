@@ -35,8 +35,34 @@ proc oppact::is_member {nick} {
     return 0
 }
 
+# -------------------------------------------------------------------------
+# BOSS SUPREMACY: boss is the head guardian. When boss deops / bans someone,
+# the pact must NOT undo it. We remember "chan:target" entries that boss has
+# acted on, with an expiry, and skip re-opping those targets.
+# -------------------------------------------------------------------------
+namespace eval oppact { variable bossact ; array set bossact {} }
+
+proc oppact::is_boss {nick} { return [string equal -nocase $nick "boss"] }
+
+# mark chan:target as a boss action (lock re-op for 600s)
+proc oppact::boss_lock {chan target} {
+    variable bossact
+    set bossact([string tolower $chan:$target]) [expr {[clock seconds] + 600}]
+}
+
+# is chan:target currently boss-locked (so pact must NOT re-op it)?
+proc oppact::boss_locked {chan target} {
+    variable bossact
+    set k [string tolower $chan:$target]
+    if {![info exists bossact($k)]} { return 0 }
+    if {[clock seconds] > $bossact($k)} { unset bossact($k) ; return 0 }
+    return 1
+}
+
 # Op a target on a channel if we currently hold ops there.
 proc oppact::give_op {chan target} {
+    # never re-op a target boss has acted on (boss supremacy)
+    if {[oppact::boss_locked $chan $target]} { return }
     if {[isop $::botnick $chan] && [onchan $target $chan] && ![isop $target $chan]} {
         putquick "MODE $chan +o $target"
     }
@@ -54,6 +80,12 @@ proc oppact::selfop {chan} {
 #   - if it was US        -> ask ChanServ, and peers will also re-op us
 bind mode - "*-o*" oppact::on_deop
 proc oppact::on_deop {nick uhost hand chan mode target} {
+    # BOSS SUPREMACY: if boss deopped someone, obey it — lock & do not re-op.
+    if {[oppact::is_boss $nick]} {
+        oppact::boss_lock $chan $target
+        putlog "oppact: boss deopped $target on $chan — pact will NOT re-op (boss supremacy)."
+        return
+    }
     # target is the nick that lost +o
     if {[oppact::is_member $target]} {
         # re-op the deopped pact bot (only if WE hold ops; harmless otherwise)
@@ -98,6 +130,7 @@ proc oppact::sweep {min hour day month year} {
         if {[isop $::botnick $chan]} {
             foreach m $members {
                 if {[onchan $m $chan] && ![isop $m $chan] && ![string equal -nocase $m $::botnick]} {
+                    if {[oppact::boss_locked $chan $m]} { continue }
                     putquick "MODE $chan +o $m"
                 }
             }
