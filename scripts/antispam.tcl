@@ -35,6 +35,8 @@ proc antispam::is_ircop {nick chan} {
 
 proc antispam::exempt {nick chan} {
     if {[antispam::is_ircop $nick $chan]} { return 1 }
+    # never touch a fellow pact bot / bitchX (mutual no-kick pact)
+    if {![catch {oppact::is_member $nick} _m] && $_m} { return 1 }
     if {[isop $nick $chan]} { return 1 }
     if {[isvoice $nick $chan]} { return 1 }
     set hand [nick2hand $nick $chan]
