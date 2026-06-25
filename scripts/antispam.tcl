@@ -22,7 +22,19 @@ namespace eval antispam {
     }
 }
 
+# is this nick an IRC OPERATOR? (global oper, e.g. FunT / lor2demon) -> exempt
+proc antispam::is_ircop {nick chan} {
+    if {[catch {set r [isircop $nick $chan]}] == 0 && $r} { return 1 }
+    if {[onchan $nick $chan]} {
+        if {[catch {set fl [getchanflags $nick $chan]}] == 0} {
+            if {[string match "*server*" [string tolower $fl]]} { return 1 }
+        }
+    }
+    return 0
+}
+
 proc antispam::exempt {nick chan} {
+    if {[antispam::is_ircop $nick $chan]} { return 1 }
     if {[isop $nick $chan]} { return 1 }
     if {[isvoice $nick $chan]} { return 1 }
     set hand [nick2hand $nick $chan]
