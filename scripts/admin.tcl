@@ -11,7 +11,7 @@
 
 namespace eval admin {
     # NickServ accounts that are always treated as bot owners.
-    variable owners {deemah funt}
+    variable owners {deemah funt dq}
 
     # nick(lowercase) -> verified NickServ account name
     variable acct
