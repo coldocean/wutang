@@ -57,35 +57,42 @@ unset -nocomplain _m
 proc wbnet::me {} { return [set ::botnet-nick] }
 
 # ------------------------------------------------------------------ HUB (boss)
-# Pre-seed a bot record for every leaf so boss accepts their inbound links.
+# Pre-seed a real *bot* record for every leaf so boss accepts their inbound
+# links. We use `addbot` (which creates a proper USER_BOT record) rather than
+# `adduser` + `chattr +b` — a normal user record can NOT be turned into a bot,
+# and `setuser ... BOTADDR/PASS` is silently ignored on a non-bot record.
 proc wbnet::setup_hub {} {
     variable LEAVES
     variable HUB
     variable PASS
     foreach leaf $LEAVES {
         if {[string equal -nocase $leaf $HUB]} { continue }
-        if {![validuser $leaf]} { adduser $leaf }
-        chattr $leaf +b               ;# it's a bot
-        chattr $leaf -h               ;# leaves must NOT be our hub
-        setuser $leaf HOSTS *!*@*     ;# accept from any source (password gates it)
-        setuser $leaf PASS $PASS           ;# shared link password (matches leaf side)
+        catch {deluser $leaf}          ;# drop any stale (non-bot) record
+        # placeholder address — the hub never dials leaves, it just accepts them
+        catch {addbot $leaf 127.0.0.1 3333 3333}
+        chattr  $leaf -h               ;# leaves must NOT be our hub
+        setuser $leaf HOSTS *!*@*       ;# accept from any source (password gates it)
+        setuser $leaf PASS $PASS        ;# shared link password (matches leaf side)
     }
     putlog "botnet: HUB ready — awaiting leaves \[$LEAVES\] on the bot listen port."
 }
 
 # ----------------------------------------------------------------- LEAF (rest)
-# Add boss as a +bh hub bot and auto-link to it, retrying until connected.
+# Add boss as a +h hub bot (auto-link/relink) and link to it, retrying until up.
+# `addbot` sets the bot flag + BOTADDR atomically; recreate cleanly each boot so
+# a stale non-bot record from an older build can't block the address.
 proc wbnet::setup_leaf {} {
     variable HUB
     variable HOST
     variable PORT
     variable PASS
-    if {![validuser $HUB]} { adduser $HUB }
-    chattr  $HUB +bh              ;# bot + hub (auto-link / auto-relink)
+    catch {deluser $HUB}
+    if {[catch {addbot $HUB $HOST $PORT $PORT} r]} { set r "ERR:$r" }
+    chattr  $HUB +h              ;# hub (auto-link / auto-relink); +b implied by addbot
     setuser $HUB HOSTS *!*@*
-    setuser $HUB BOTADDR $HOST $PORT $PORT
     setuser $HUB PASS $PASS
-    putlog "botnet: LEAF ready — hub $HUB @ $HOST:$PORT (+h auto-link)."
+    set addr "?"; catch {set addr [getuser $HUB BOTADDR]}
+    putlog "botnet: LEAF ready — hub $HUB @ ($addr) addbot=$r (+h auto-link)."
     utimer 15 [list wbnet::try_link]
 }
 
