@@ -68,7 +68,7 @@ proc wbnet::setup_hub {} {
         chattr $leaf +b               ;# it's a bot
         chattr $leaf -h               ;# leaves must NOT be our hub
         setuser $leaf HOSTS *!*@*     ;# accept from any source (password gates it)
-        chpass  $leaf $PASS           ;# shared link password (matches leaf side)
+        setuser $leaf PASS $PASS           ;# shared link password (matches leaf side)
     }
     putlog "botnet: HUB ready — awaiting leaves \[$LEAVES\] on the bot listen port."
 }
@@ -84,7 +84,7 @@ proc wbnet::setup_leaf {} {
     chattr  $HUB +bh              ;# bot + hub (auto-link / auto-relink)
     setuser $HUB HOSTS *!*@*
     setuser $HUB BOTADDR $HOST $PORT $PORT
-    chpass  $HUB $PASS
+    setuser $HUB PASS $PASS
     putlog "botnet: LEAF ready — hub $HUB @ $HOST:$PORT (+h auto-link)."
     utimer 15 [list wbnet::try_link]
 }
