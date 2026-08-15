@@ -203,3 +203,63 @@ if {[info commands ::protect::_orig_pushmode] eq ""} {
 }
 
 putlog "protect.tcl loaded — masters (+m) & owners (+n) can never be kicked or banned"
+
+# ===========================================================================
+#  SELF-HEAL: make sure configured owners really hold +n, and purge any
+#  stale ban (channel or global, stored or live) that hits a master/owner.
+# ===========================================================================
+
+proc protect::ensure_owners {} {
+    foreach o [split [string map {, " "} $::owner] " "] {
+        set o [string trim $o]
+        if {$o eq ""} { continue }
+        if {![validuser $o]} { adduser $o }
+        if {![matchattr $o n]} {
+            chattr $o +nmfo
+            putlog "protect: restored owner flags (+nmfo) on handle $o"
+        }
+    }
+}
+
+proc protect::purge_bans {} {
+    # stored + live channel bans
+    foreach c [channels] {
+        if {![validchan $c]} { continue }
+        foreach b [chanbans $c] {
+            set mask [lindex $b 0]
+            if {[protect::mask_immune $mask $c]} {
+                catch {killchanban $c $mask}
+                catch {::protect::_orig_pushmode $c -b $mask}
+                putlog "protect: purged stale ban $mask on $c (master/owner)"
+            }
+        }
+    }
+    # global bans
+    foreach b [banlist] {
+        set mask [lindex $b 0]
+        if {[protect::mask_immune $mask]} {
+            catch {killban $mask}
+            putlog "protect: purged stale global ban $mask (master/owner)"
+        }
+    }
+}
+
+proc protect::sweep {} {
+    catch {protect::ensure_owners}
+    catch {protect::purge_bans}
+}
+
+# run on connect and every minute thereafter
+bind evnt - init-server protect::evnt_sweep
+proc protect::evnt_sweep {type} {
+    utimer 15 protect::sweep
+    utimer 45 protect::sweep
+}
+bind time - "* * * * *" protect::time_sweep
+proc protect::time_sweep {min hour day month year} { protect::sweep }
+
+# also once at load, in case the bot is already connected (rehash)
+catch {protect::ensure_owners}
+utimer 20 protect::sweep
+
+putlog "protect.tcl: owner self-heal + stale-ban purge active"
