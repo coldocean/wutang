@@ -33,7 +33,7 @@ proc protect::hand_immune {hand {chan ""}} {
 proc protect::immune {nick {chan ""}} {
     if {$nick eq ""} { return 0 }
     # the bot never kicks/bans itself
-    if {[string equal -nocase $nick [botnick]]} { return 1 }
+    if {[string equal -nocase $nick $::botnick]} { return 1 }
 
     # resolve nick -> handle. Try the channel first, then all channels.
     set hand ""
