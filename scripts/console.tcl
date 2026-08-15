@@ -32,6 +32,13 @@ proc console::enroll {nick} {
         adduser $handle
         chattr $handle +nmfo
         putlog "console: enrolled owner $handle (+nmfo) from NickServ account."
+    } else {
+        # Existing handle: FORCE the owner flags back on. Guarantees a
+        # previously-demoted owner regains +n the moment they identify.
+        if {![matchattr $handle n]} {
+            chattr $handle +nmfo
+            putlog "console: restored owner flags (+nmfo) on existing handle $handle."
+        }
     }
     # bind their current hostmask so DCC/partyline recognizes them too
     set host [getchanhost $nick]
